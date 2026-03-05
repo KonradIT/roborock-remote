@@ -1,0 +1,62 @@
+#pragma once
+#include <Arduino.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include "config_store.h"
+#include "roborock_api.h"
+
+class RoborockMqtt {
+public:
+    RoborockMqtt();
+    void configure(const RoborockConfig& cfg);
+    bool connect();
+    void disconnect();
+    bool isConnected();
+    void loop();
+
+    bool requestStatus();
+    bool hasNewStatus() const;
+    RobotStatus takeStatus();
+
+    void onMessage(const char* topic, const uint8_t* data, size_t len);
+
+private:
+    static constexpr size_t RX_BUF_SIZE = 4096;
+    static constexpr const char* SALT = "TXdfu$jyZ#TZHsg4";
+
+    RoborockConfig _cfg;
+    WiFiClientSecure _tls;
+    PubSubClient _mqtt;
+
+    String _mqttHost;
+    int    _mqttPort = 8883;
+    String _mqttUser;
+    String _mqttPass;
+    String _pubTopic;
+    String _subTopic;
+
+    uint8_t* _rxBuf  = nullptr;
+    size_t   _rxLen  = 0;
+    bool     _rxReady = false;
+
+    bool _hasStatus = false;
+    RobotStatus _lastStatus;
+
+    void parseMqttUrl(const String& url);
+    void deriveCredentials();
+
+    size_t buildStatusRequest(uint8_t* buf, size_t maxLen);
+    bool   parseMessage(const uint8_t* data, size_t len);
+
+    static String  md5Hex(const String& input);
+    static void    md5Raw(const uint8_t* input, size_t len, uint8_t out[16]);
+    static void    encodeTimestamp(uint32_t ts, char out[9]);
+    static void    deriveToken(uint32_t ts, const char* localKey, uint8_t token[16]);
+    static void    aesEcbEncrypt(const uint8_t* in, size_t len, const uint8_t key[16], uint8_t* out);
+    static void    aesEcbDecrypt(const uint8_t* in, size_t len, const uint8_t key[16], uint8_t* out);
+    static uint32_t calcCrc32(const uint8_t* data, size_t len);
+    static void    writeBE16(uint8_t* dst, uint16_t v);
+    static void    writeBE32(uint8_t* dst, uint32_t v);
+    static uint16_t readBE16(const uint8_t* src);
+    static uint32_t readBE32(const uint8_t* src);
+};
