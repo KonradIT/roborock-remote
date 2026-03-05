@@ -9,11 +9,13 @@ public:
 
     bool hasNewConfig() const;
     RoborockConfig takeConfig();
+    String takeRoomsJson();
 
 private:
     bool _configReady     = false;
     bool _inConfigBlock   = false;
     RoborockConfig _pending;
+    String _pendingRooms;
     String _lineBuf;
 
     void processLine(const String& line);

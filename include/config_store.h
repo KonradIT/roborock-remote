@@ -45,6 +45,13 @@ public:
     void save(const RoborockConfig& config);
     void clear();
 
+    String loadRooms();
+    void   saveRooms(const String& json);
+    void   clearRooms();
+
+    String loadHomeRooms();
+    void   saveHomeRooms(const String& json);
+
 private:
     Preferences _prefs;
     static constexpr const char* NS = "roborock";

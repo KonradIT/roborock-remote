@@ -27,10 +27,17 @@ RoborockConfig SerialHandler::takeConfig() {
     return _pending;
 }
 
+String SerialHandler::takeRoomsJson() {
+    String r = _pendingRooms;
+    _pendingRooms = "";
+    return r;
+}
+
 void SerialHandler::processLine(const String& line) {
     if (line == "CONFIG_BEGIN") {
         _inConfigBlock = true;
         _pending = RoborockConfig();
+        _pendingRooms = "";
         Serial.println("OK CONFIG_BEGIN");
         return;
     }
@@ -82,6 +89,7 @@ void SerialHandler::handleKeyValue(const String& key, const String& value) {
     else if (key == "dev_name")  _pending.dev_name  = value;
     else if (key == "local_key") _pending.local_key = value;
     else if (key == "rriot_m")   _pending.rriot_m   = value;
+    else if (key == "rooms")     _pendingRooms      = value;
     else {
         Serial.println("WARN unknown key: " + key);
     }

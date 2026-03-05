@@ -51,3 +51,35 @@ void ConfigStore::clear() {
     _prefs.clear();
     _prefs.end();
 }
+
+String ConfigStore::loadRooms() {
+    _prefs.begin(NS, true);
+    String s = _prefs.getString("rooms", "");
+    _prefs.end();
+    return s;
+}
+
+void ConfigStore::saveRooms(const String& json) {
+    _prefs.begin(NS, false);
+    _prefs.putString("rooms", json);
+    _prefs.end();
+}
+
+void ConfigStore::clearRooms() {
+    _prefs.begin(NS, false);
+    _prefs.remove("rooms");
+    _prefs.end();
+}
+
+String ConfigStore::loadHomeRooms() {
+    _prefs.begin(NS, true);
+    String s = _prefs.getString("home_rooms", "");
+    _prefs.end();
+    return s;
+}
+
+void ConfigStore::saveHomeRooms(const String& json) {
+    _prefs.begin(NS, false);
+    _prefs.putString("home_rooms", json);
+    _prefs.end();
+}

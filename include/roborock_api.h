@@ -6,6 +6,7 @@ struct RobotStatus {
     String name;
     int battery      = -1;
     int state        = -1;
+    int cleanPercent = -1;
     bool charging    = false;
     bool online      = false;
     bool valid       = false;

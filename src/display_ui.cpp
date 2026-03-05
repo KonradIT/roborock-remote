@@ -10,6 +10,33 @@ static constexpr uint16_t COL_GREEN   = 0x07E0;
 static constexpr uint16_t COL_YELLOW  = 0xFFE0;
 static constexpr uint16_t COL_RED     = 0xF800;
 static constexpr uint16_t COL_BAR_BG  = 0x2104;   // very dark grey
+static constexpr uint16_t COL_ORANGE  = 0xFD20;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const char* DisplayUI::stateText(int state) {
+    switch (state) {
+        case 1:  return "Initiating";
+        case 2:  return "Sleeping";
+        case 3:  return "Waiting";
+        case 5:  return "Cleaning";
+        case 6:  return "Returning";
+        case 7:  return "Manual";
+        case 8:  return "Charging";
+        case 9:  return "Charge err";
+        case 10: return "Paused";
+        case 11: return "Spot clean";
+        case 12: return "In error";
+        case 14: return "Updating";
+        case 15: return "Docking";
+        case 17: return "Zone clean";
+        case 18: return "Segment cl";
+        case 100:return "Full";
+        default: return "Idle";
+    }
+}
 
 void DisplayUI::begin() {
     M5.Display.setRotation(0);
@@ -31,14 +58,33 @@ void DisplayUI::drawBatteryBar(int y, int percent) {
     int pad = 10;
     int bw  = w - pad * 2;
     int bh  = 14;
-
     M5.Display.fillRoundRect(pad, y, bw, bh, 3, COL_BAR_BG);
-
     if (percent < 0) return;
     int fill = (bw - 2) * percent / 100;
     uint16_t col = percent > 50 ? COL_GREEN : (percent > 20 ? COL_YELLOW : COL_RED);
     M5.Display.fillRoundRect(pad + 1, y + 1, fill, bh - 2, 2, col);
 }
+
+void DisplayUI::drawCircularGauge(int cx, int cy, int rOuter, int rInner,
+                                   int percent, uint16_t color) {
+    M5.Display.fillArc(cx, cy, rOuter, rInner, 0, 360, COL_BAR_BG);
+    if (percent > 0) {
+        float endAngle = 270.0f + percent * 3.6f;
+        M5.Display.fillArc(cx, cy, rOuter, rInner, 270, endAngle, color);
+    }
+
+    M5.Display.setTextColor(COL_TEXT, COL_BG);
+    M5.Display.setTextDatum(MC_DATUM);
+    M5.Display.setTextSize(3);
+    M5.Display.fillRect(cx - rInner + 2, cy - 14, (rInner - 2) * 2, 28, COL_BG);
+    M5.Display.drawString(String(percent) + "%", cx, cy);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextDatum(TL_DATUM);
+}
+
+// ---------------------------------------------------------------------------
+// Status screen (original)
+// ---------------------------------------------------------------------------
 
 void DisplayUI::showStatus(const RobotStatus& status) {
     int w = M5.Display.width();
@@ -48,7 +94,6 @@ void DisplayUI::showStatus(const RobotStatus& status) {
     int y = 30;
     M5.Display.setTextSize(1);
 
-    // Robot name
     M5.Display.setTextColor(COL_ACCENT);
     String name = status.name.isEmpty() ? "Unknown" : status.name;
     if (name.length() > 22) name = name.substring(0, 20) + "..";
@@ -60,7 +105,6 @@ void DisplayUI::showStatus(const RobotStatus& status) {
     M5.Display.drawFastHLine(10, y, w - 20, COL_DIM);
     y += 8;
 
-    // Battery
     M5.Display.setTextColor(COL_TEXT);
     if (status.battery >= 0) {
         M5.Display.drawString("Battery: " + String(status.battery) + "%", 10, y);
@@ -73,39 +117,18 @@ void DisplayUI::showStatus(const RobotStatus& status) {
     drawBatteryBar(y, status.battery);
     y += 22;
 
-    // Charging / state
     if (status.charging) {
         M5.Display.setTextColor(COL_GREEN);
         M5.Display.drawString("Charging", 10, y);
     } else if (status.state >= 0) {
-        const char* stateText = "Idle";
-        switch (status.state) {
-            case 1:  stateText = "Initiating"; break;
-            case 2:  stateText = "Sleeping";   break;
-            case 3:  stateText = "Waiting";    break;
-            case 5:  stateText = "Cleaning";   break;
-            case 6:  stateText = "Returning";  break;
-            case 7:  stateText = "Manual";     break;
-            case 8:  stateText = "Charging";   break;
-            case 9:  stateText = "Charge err"; break;
-            case 10: stateText = "Paused";     break;
-            case 11: stateText = "Spot clean"; break;
-            case 12: stateText = "In error";   break;
-            case 14: stateText = "Updating";   break;
-            case 15: stateText = "Docking";    break;
-            case 17: stateText = "Zone clean"; break;
-            case 18: stateText = "Segment cl"; break;
-            case 100:stateText = "Full";       break;
-        }
         M5.Display.setTextColor(COL_TEXT);
-        M5.Display.drawString(String("State: ") + stateText, 10, y);
+        M5.Display.drawString(String("State: ") + stateText(status.state), 10, y);
     } else {
         M5.Display.setTextColor(COL_DIM);
         M5.Display.drawString("State: N/A", 10, y);
     }
     y += 18;
 
-    // Online
     M5.Display.setTextColor(status.online ? COL_GREEN : COL_RED);
     M5.Display.drawString(status.online ? "Online" : "Offline", 10, y);
     y += 20;
@@ -113,7 +136,6 @@ void DisplayUI::showStatus(const RobotStatus& status) {
     M5.Display.drawFastHLine(10, y, w - 20, COL_DIM);
     y += 8;
 
-    // Last update time
     M5.Display.setTextColor(COL_DIM);
     time_t now = time(nullptr);
     struct tm t;
@@ -123,28 +145,190 @@ void DisplayUI::showStatus(const RobotStatus& status) {
     M5.Display.drawString(buf, 10, y);
     y += 18;
 
-    // Error (if any)
     if (!status.error.isEmpty()) {
         M5.Display.setTextColor(COL_RED);
         String err = status.error;
         if (err.length() > 22) err = err.substring(0, 20) + "..";
         M5.Display.drawString(err, 10, y);
-        y += 14;
     }
 
-    // Hint
     y = M5.Display.height() - 12;
     M5.Display.setTextColor(COL_DIM);
     M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.drawString("[A] Refresh", w / 2, y);
+    M5.Display.drawString("[A] Clean  [B] Refresh", w / 2, y);
     M5.Display.setTextDatum(TL_DATUM);
 }
+
+// ---------------------------------------------------------------------------
+// Generic selector screen
+// ---------------------------------------------------------------------------
+
+void DisplayUI::showSelector(const char* title, const String& item,
+                              int index, int total) {
+    int w = M5.Display.width();
+    int h = M5.Display.height();
+    M5.Display.fillScreen(COL_BG);
+    drawHeader(title);
+
+    // Counter "< 1 / 5 >"
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextDatum(MC_DATUM);
+    String counter = String(index + 1) + " / " + String(total);
+    M5.Display.drawString(counter, w / 2, 40);
+
+    // Main item text
+    M5.Display.setTextColor(COL_ACCENT);
+    M5.Display.setTextSize(2);
+    String display = item;
+    int maxChars = (w - 10) / 12;
+    if ((int)display.length() > maxChars)
+        display = display.substring(0, maxChars - 1) + "~";
+    M5.Display.drawString(display, w / 2, h / 2 - 10);
+
+    // Decorative arrows
+    M5.Display.setTextSize(1);
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.drawString("<", 8, h / 2 - 10);
+    M5.Display.drawString(">", w - 14, h / 2 - 10);
+
+    // Button hints
+    M5.Display.setTextDatum(MC_DATUM);
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.setTextSize(1);
+    M5.Display.drawString("[B] Next", w / 2, h - 24);
+    M5.Display.drawString("[A] Select", w / 2, h - 10);
+    M5.Display.setTextDatum(TL_DATUM);
+}
+
+// ---------------------------------------------------------------------------
+// Clean confirmation screen
+// ---------------------------------------------------------------------------
+
+void DisplayUI::showCleanConfirm(const String& room, const String& mode,
+                                  const String& suction) {
+    int w = M5.Display.width();
+    int h = M5.Display.height();
+    M5.Display.fillScreen(COL_BG);
+    drawHeader("START CLEAN");
+
+    int y = 36;
+    M5.Display.setTextSize(1);
+
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.drawString("Room:", 10, y);
+    y += 14;
+    M5.Display.setTextColor(COL_ACCENT);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextDatum(MC_DATUM);
+    String rName = room;
+    if (rName.length() > 11) rName = rName.substring(0, 10) + "~";
+    M5.Display.drawString(rName, w / 2, y + 4);
+    M5.Display.setTextDatum(TL_DATUM);
+    M5.Display.setTextSize(1);
+    y += 28;
+
+    M5.Display.drawFastHLine(10, y, w - 20, COL_DIM);
+    y += 8;
+
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.drawString("Mode:", 10, y);
+    y += 14;
+    M5.Display.setTextColor(COL_TEXT);
+    M5.Display.drawString("  " + mode, 10, y);
+    y += 18;
+
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.drawString("Suction:", 10, y);
+    y += 14;
+    M5.Display.setTextColor(COL_TEXT);
+    M5.Display.drawString("  " + suction, 10, y);
+    y += 24;
+
+    M5.Display.drawFastHLine(10, y, w - 20, COL_DIM);
+    y += 12;
+
+    // START button area
+    int btnW = 90, btnH = 28;
+    int btnX = (w - btnW) / 2, btnY = y;
+    M5.Display.fillRoundRect(btnX, btnY, btnW, btnH, 6, COL_GREEN);
+    M5.Display.setTextColor(COL_BG, COL_GREEN);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextDatum(MC_DATUM);
+    M5.Display.drawString("START", w / 2, btnY + btnH / 2);
+    M5.Display.setTextDatum(TL_DATUM);
+    M5.Display.setTextSize(1);
+
+    // Hints
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.setTextDatum(MC_DATUM);
+    M5.Display.drawString("[A] Start  [B] Cancel", w / 2, h - 10);
+    M5.Display.setTextDatum(TL_DATUM);
+}
+
+// ---------------------------------------------------------------------------
+// Cleaning progress screen with circular gauge
+// ---------------------------------------------------------------------------
+
+void DisplayUI::showCleaningProgress(int cleanPercent, int batteryPercent,
+                                      int state, unsigned long elapsedMs) {
+    int w = M5.Display.width();
+    int h = M5.Display.height();
+    M5.Display.fillScreen(COL_BG);
+    drawHeader("CLEANING");
+
+    int cx = w / 2;
+    int cy = 95;
+    int rOuter = 48;
+    int rInner = 36;
+
+    int gaugeVal = (cleanPercent >= 0) ? cleanPercent : 0;
+    uint16_t gaugeColor = COL_ACCENT;
+    if (gaugeVal > 75)      gaugeColor = COL_GREEN;
+    else if (gaugeVal > 40) gaugeColor = COL_ACCENT;
+    else                    gaugeColor = COL_ORANGE;
+
+    drawCircularGauge(cx, cy, rOuter, rInner, gaugeVal, gaugeColor);
+
+    int y = cy + rOuter + 12;
+
+    // State text
+    M5.Display.setTextColor(COL_ACCENT);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextDatum(MC_DATUM);
+    M5.Display.drawString(stateText(state), cx, y);
+    y += 16;
+
+    // Elapsed time
+    unsigned long secs = elapsedMs / 1000;
+    unsigned long mins = secs / 60;
+    secs %= 60;
+    char timeBuf[8];
+    snprintf(timeBuf, sizeof(timeBuf), "%lu:%02lu", mins, secs);
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.drawString(timeBuf, cx, y);
+    y += 16;
+
+    // Battery as secondary info
+    if (batteryPercent >= 0) {
+        uint16_t batCol = batteryPercent > 50 ? COL_GREEN : (batteryPercent > 20 ? COL_YELLOW : COL_RED);
+        M5.Display.setTextColor(batCol);
+        M5.Display.drawString("Bat: " + String(batteryPercent) + "%", cx, y);
+    }
+
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.drawString("[B] Home", cx, h - 10);
+    M5.Display.setTextDatum(TL_DATUM);
+}
+
+// ---------------------------------------------------------------------------
+// Simple message screens
+// ---------------------------------------------------------------------------
 
 void DisplayUI::showMessage(const String& title, const String& msg) {
     int w = M5.Display.width();
     M5.Display.fillScreen(COL_BG);
     drawHeader(title.c_str());
-
     M5.Display.setTextColor(COL_TEXT);
     M5.Display.setTextSize(1);
     M5.Display.setTextDatum(MC_DATUM);

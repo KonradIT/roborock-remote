@@ -23,7 +23,7 @@ except ImportError:
     print("pyserial is required:  pip install pyserial")
     sys.exit(1)
 
-
+# gotten from: https://github.com/Python-roborock/python-roborock/blob/b658ef1c125ef5c321513e7c22bd99af814a2934/roborock/web_api.py#L34
 REGION_URLS = {
     "us": "https://usiot.roborock.com",
     "eu": "https://euiot.roborock.com",
@@ -126,6 +126,14 @@ def main():
 
     device = pick_device(devices)
 
+    # --- Rooms ---
+    home_rooms = home.get("rooms", [])
+    rooms_json = ""
+    if home_rooms:
+        rooms_data = [{"id": r["id"], "name": r["name"]} for r in home_rooms]
+        rooms_json = json.dumps(rooms_data, separators=(",", ":"))
+        print(f"\n  Found {len(rooms_data)} rooms: {', '.join(r['name'] for r in rooms_data)}")
+
     # --- WiFi ---
     print()
     wifi_ssid = input("WiFi SSID: ").strip()
@@ -147,6 +155,7 @@ def main():
         "dev_duid":  device.get("duid", ""),
         "dev_name":  device.get("name", ""),
         "local_key": device.get("localKey", ""),
+        "rooms":     rooms_json,
     }
 
     # --- Serial port ---
