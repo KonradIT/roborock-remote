@@ -116,6 +116,7 @@ def main():
     # --- Home data ---
     cache = data.get("cacheData") or {}
     home = cache.get("homeData") or {}
+    device_info = cache.get("deviceInfo") or {}
     home_id = home.get("id")
     devices = home.get("devices", []) + home.get("receivedDevices", [])
 
@@ -135,10 +136,29 @@ def main():
         print(f"\n  Found {len(rooms_data)} rooms: {', '.join(r['name'] for r in rooms_data)}")
 
     # --- WiFi & device IP ---
-    print()
-    wifi_ssid = input("WiFi SSID: ").strip()
+    wifi_ssid = ""
+    if device_info:
+        wifi_ssid_in_config = device_info.get(device.get("duid", ""), {}).get("networkInfo", {}).get("ssid", "")
+        if wifi_ssid_in_config:
+            wifi_ssid = wifi_ssid_in_config
+            print(f"  Using WiFi SSID: {wifi_ssid}")
+        else:
+            wifi_ssid = input("WiFi SSID: ").strip()
+    else:
+        wifi_ssid = input("WiFi SSID: ").strip()
+    
     wifi_pass = input("WiFi Password: ").strip()
-    dev_ip    = input("Robot IP address (leave blank to use cloud): ").strip()
+    
+    dev_ip = "" # Initially blank, let user decide cloud/local mode.
+
+    mode_chosen = input("Choose mode (cloud/local): ").strip()
+    if mode_chosen == "local":
+        dev_ip = device_info.get(device.get("duid", ""), {}).get("networkInfo", {}).get("ip", "")
+        if not dev_ip:
+            print("No device IP found in home data. Please enter it manually.")
+            dev_ip = input("Robot IP address: ").strip()
+        else:
+            print(f"  Using device IP: {dev_ip}")
 
     config_payload = {
         "wifi_ssid": wifi_ssid,
