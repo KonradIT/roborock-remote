@@ -134,10 +134,11 @@ def main():
         rooms_json = json.dumps(rooms_data, separators=(",", ":"))
         print(f"\n  Found {len(rooms_data)} rooms: {', '.join(r['name'] for r in rooms_data)}")
 
-    # --- WiFi ---
+    # --- WiFi & device IP ---
     print()
     wifi_ssid = input("WiFi SSID: ").strip()
     wifi_pass = input("WiFi Password: ").strip()
+    dev_ip    = input("Robot IP address (leave blank to use cloud): ").strip()
 
     config_payload = {
         "wifi_ssid": wifi_ssid,
@@ -155,6 +156,7 @@ def main():
         "dev_duid":  device.get("duid", ""),
         "dev_name":  device.get("name", ""),
         "local_key": device.get("localKey", ""),
+        "dev_ip":    dev_ip,
         "rooms":     rooms_json,
     }
 

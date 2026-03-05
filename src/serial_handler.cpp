@@ -89,6 +89,7 @@ void SerialHandler::handleKeyValue(const String& key, const String& value) {
     else if (key == "dev_name")  _pending.dev_name  = value;
     else if (key == "local_key") _pending.local_key = value;
     else if (key == "rriot_m")   _pending.rriot_m   = value;
+    else if (key == "dev_ip")    _pending.dev_ip    = value;
     else if (key == "rooms")     _pendingRooms      = value;
     else {
         Serial.println("WARN unknown key: " + key);

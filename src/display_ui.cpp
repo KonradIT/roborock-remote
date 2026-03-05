@@ -89,7 +89,7 @@ void DisplayUI::drawCircularGauge(int cx, int cy, int rOuter, int rInner,
 void DisplayUI::showStatus(const RobotStatus& status) {
     int w = M5.Display.width();
     M5.Display.fillScreen(COL_BG);
-    drawHeader("ROBOROCK");
+    drawHeader(_local ? "LOCAL" : "CLOUD");
 
     int y = 30;
     M5.Display.setTextSize(1);

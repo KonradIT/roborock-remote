@@ -5,6 +5,7 @@
 class DisplayUI {
 public:
     void begin();
+    void setMode(bool local) { _local = local; }
     void showStatus(const RobotStatus& status);
     void showMessage(const String& title, const String& msg);
     void showConfigMode();
@@ -19,6 +20,7 @@ public:
                               int state, unsigned long elapsedMs);
 
 private:
+    bool _local = false;
     void drawHeader(const char* text);
     void drawBatteryBar(int y, int percent);
     void drawCircularGauge(int cx, int cy, int rOuter, int rInner,
