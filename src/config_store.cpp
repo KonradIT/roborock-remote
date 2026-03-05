@@ -22,6 +22,7 @@ RoborockConfig ConfigStore::load() {
     c.dev_name  = _prefs.getString("dev_name", "");
     c.local_key = _prefs.getString("local_key", "");
     c.rriot_m   = _prefs.getString("rriot_m", "");
+    c.dev_ip    = _prefs.getString("dev_ip", "");
     _prefs.end();
     return c;
 }
@@ -43,6 +44,7 @@ void ConfigStore::save(const RoborockConfig& c) {
     _prefs.putString("dev_name",  c.dev_name);
     _prefs.putString("local_key", c.local_key);
     _prefs.putString("rriot_m",   c.rriot_m);
+    _prefs.putString("dev_ip",    c.dev_ip);
     _prefs.end();
 }
 

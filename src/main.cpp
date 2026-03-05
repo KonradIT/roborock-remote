@@ -5,6 +5,7 @@
 #include "config_store.h"
 #include "roborock_api.h"
 #include "roborock_mqtt.h"
+#include "roborock_local.h"
 #include "display_ui.h"
 #include "serial_handler.h"
 
@@ -31,7 +32,7 @@ static constexpr int SUCTION_COUNT  = 4;
 // Application state
 // ---------------------------------------------------------------------------
 enum class State {
-    BOOT, NO_CONFIG, CONNECTING, SYNCING_TIME, MQTT_CONNECT,
+    BOOT, NO_CONFIG, CONNECTING, SYNCING_TIME, DEVICE_CONNECT,
     FETCHING, SHOWING, ERR,
     LOAD_ROOMS, ROOM_SELECT, MODE_SELECT, SUCTION_SELECT,
     CONFIRM_CLEAN, CLEANING
@@ -41,6 +42,7 @@ static ConfigStore    store;
 static RoborockConfig cfg;
 static RoborockApi*   api = nullptr;
 static RoborockMqtt   mqtt;
+static RoborockLocal  local;
 static DisplayUI      ui;
 static SerialHandler  serial_handler;
 
@@ -48,7 +50,8 @@ static State          state        = State::BOOT;
 static unsigned long  lastRefresh  = 0;
 static unsigned long  stateEnterMs = 0;
 static RobotStatus    lastStatus;
-static bool           mqttAvailable = false;
+static bool           deviceReady   = false;
+static bool           useLocal      = false;
 
 // Cleaning flow
 static Room           rooms[MAX_ROOMS];
@@ -85,6 +88,47 @@ static bool syncNtp() {
     while (time(nullptr) < 1000000000UL && millis() - start < NTP_TIMEOUT)
         delay(250);
     return time(nullptr) >= 1000000000UL;
+}
+
+// ---------------------------------------------------------------------------
+// Transport abstraction — local TCP vs cloud MQTT
+// ---------------------------------------------------------------------------
+
+static bool devSendRpc(const String& method, const String& params = "[]") {
+    return useLocal ? local.sendRpc(method, params) : mqtt.sendRpc(method, params);
+}
+static bool devHasRpc() {
+    return useLocal ? local.hasRpcResponse() : mqtt.hasRpcResponse();
+}
+static String devTakeRpc() {
+    return useLocal ? local.takeRpcResult() : mqtt.takeRpcResult();
+}
+static bool devRequestStatus() {
+    return useLocal ? local.requestStatus() : mqtt.requestStatus();
+}
+static bool devHasNewStatus() {
+    return useLocal ? local.hasNewStatus() : mqtt.hasNewStatus();
+}
+static RobotStatus devTakeStatus() {
+    return useLocal ? local.takeStatus() : mqtt.takeStatus();
+}
+static bool devIsConnected() {
+    return useLocal ? local.isConnected() : mqtt.isConnected();
+}
+static void devLoop() {
+    if (useLocal) local.loop(); else if (deviceReady) mqtt.loop();
+}
+static bool devFetchRooms(Room* r, int max, int& cnt, unsigned long to = 10000) {
+    return useLocal ? local.fetchRooms(r, max, cnt, to) : mqtt.fetchRooms(r, max, cnt, to);
+}
+static bool devSetFanPower(int p) {
+    return useLocal ? local.setFanPower(p) : mqtt.setFanPower(p);
+}
+static bool devSetWaterBoxMode(int m) {
+    return useLocal ? local.setWaterBoxMode(m) : mqtt.setWaterBoxMode(m);
+}
+static bool devStartSegmentClean(const int* ids, int cnt, int rep = 1) {
+    return useLocal ? local.startSegmentClean(ids, cnt, rep) : mqtt.startSegmentClean(ids, cnt, rep);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,13 +196,13 @@ static String lookupRoomName(const String& cloudRoomId, JsonArray& homeRooms) {
     return "";
 }
 
-// Fetch segment mapping via MQTT, merge with homeData names, populate rooms[].
+// Fetch segment mapping, merge with homeData names, populate rooms[].
 static bool fetchAndMergeRooms() {
-    if (!mqttAvailable || !mqtt.isConnected()) return false;
+    if (!deviceReady || !devIsConnected()) return false;
 
     Room mapped[MAX_ROOMS];
     int mappedCount = 0;
-    if (!mqtt.fetchRooms(mapped, MAX_ROOMS, mappedCount, 10000) || mappedCount == 0)
+    if (!devFetchRooms(mapped, MAX_ROOMS, mappedCount, 10000) || mappedCount == 0)
         return false;
 
     // mapped[i].id   = segment_id  (e.g. 16)
@@ -242,25 +286,42 @@ static void onConnecting() {
 
 static void onSyncingTime() {
     Serial.println("LOG: Syncing NTP...");
-    syncNtp();
-    Serial.println("LOG: Time synced");
-    if (cfg.mqttReady()) {
-        enterState(State::MQTT_CONNECT);
+    bool ntpOk = syncNtp();
+    Serial.println(ntpOk ? "LOG: Time synced" : "LOG: NTP failed (continuing)");
+
+    useLocal = cfg.localReady();
+    ui.setMode(useLocal);
+    if (useLocal || cfg.mqttReady()) {
+        enterState(State::DEVICE_CONNECT);
     } else {
-        Serial.println("LOG: MQTT creds missing, skipping");
-        mqttAvailable = false;
+        Serial.println("LOG: No device creds, HTTP-only");
+        deviceReady = false;
         enterState(State::FETCHING);
     }
 }
 
-static void onMqttConnect() {
-    Serial.println("LOG: Connecting MQTT...");
-    mqtt.configure(cfg);
-    if (mqtt.connect()) {
-        mqttAvailable = true;
+static void onDeviceConnect() {
+    if (useLocal) {
+        Serial.println("LOG: Connecting local TCP to " + cfg.dev_ip + "...");
+        ui.showMessage("LOCAL", "Connecting to\n" + cfg.dev_ip);
+        local.configure(cfg);
+        if (local.connect()) {
+            deviceReady = true;
+            lastStatus.online = true;
+        } else {
+            Serial.println("LOG: Local connect failed");
+            deviceReady = false;
+        }
     } else {
-        Serial.println("LOG: MQTT failed, HTTP-only");
-        mqttAvailable = false;
+        Serial.println("LOG: Connecting cloud MQTT...");
+        mqtt.configure(cfg);
+        if (mqtt.connect()) {
+            deviceReady = true;
+            lastStatus.online = true;
+        } else {
+            Serial.println("LOG: MQTT failed, HTTP-only");
+            deviceReady = false;
+        }
     }
     enterState(State::FETCHING);
 }
@@ -272,30 +333,40 @@ static void onMqttConnect() {
 static void onFetching() {
     ui.showRefreshing();
     Serial.println("LOG: Fetching robot status...");
-
-    if (!api) api = new RoborockApi(cfg);
-    else      api->updateConfig(cfg);
-
-    lastStatus  = api->fetchHomeData();
     lastRefresh = millis();
 
-    if (mqttAvailable && mqtt.isConnected()) {
-        mqtt.requestStatus();
+    if (deviceReady && devIsConnected()) {
+        devRequestStatus();
         unsigned long start = millis();
-        while (!mqtt.hasNewStatus() && millis() - start < MQTT_STATUS_TIMEOUT) {
-            mqtt.loop();
+        while (!devHasNewStatus() && millis() - start < MQTT_STATUS_TIMEOUT) {
+            devLoop();
             delay(50);
         }
-        if (mqtt.hasNewStatus()) {
-            RobotStatus ms = mqtt.takeStatus();
+        if (devHasNewStatus()) {
+            RobotStatus ms = devTakeStatus();
+            lastStatus.name    = cfg.dev_name;
+            lastStatus.online  = true;
             if (ms.battery >= 0) lastStatus.battery  = ms.battery;
             if (ms.state >= 0)   lastStatus.state    = ms.state;
             lastStatus.charging = ms.charging;
+            lastStatus.valid    = true;
+        }
+    }
+
+    if (!lastStatus.valid) {
+        // Fall back to HTTP cloud API if available
+        if (cfg.rriot_u.length() > 0) {
+            if (!api) api = new RoborockApi(cfg);
+            else      api->updateConfig(cfg);
+            lastStatus = api->fetchHomeData();
+        } else {
+            lastStatus.name  = cfg.dev_name;
+            lastStatus.error = "No status source";
         }
     }
 
     if (lastStatus.valid) {
-        Serial.println("LOG: Status — bat=" + String(lastStatus.battery) +
+        Serial.println("LOG: Status - bat=" + String(lastStatus.battery) +
                        " state=" + String(lastStatus.state));
         ui.showStatus(lastStatus);
         enterState(State::SHOWING);
@@ -319,9 +390,9 @@ static void onDisplay() {
         enterState(State::FETCHING);
         return;
     }
-    // Live MQTT push notifications
-    if (mqttAvailable && mqtt.hasNewStatus()) {
-        RobotStatus ms = mqtt.takeStatus();
+    // Live push notifications
+    if (deviceReady && devHasNewStatus()) {
+        RobotStatus ms = devTakeStatus();
         if (ms.battery >= 0) lastStatus.battery  = ms.battery;
         if (ms.state >= 0)   lastStatus.state    = ms.state;
         lastStatus.charging = ms.charging;
@@ -344,13 +415,36 @@ static void onError() {
 // State handlers — cleaning flow
 // ---------------------------------------------------------------------------
 
+static bool loadRoomsFromHomeData() {
+    String homeJson = store.loadHomeRooms();
+    if (homeJson.length() == 0) return false;
+
+    JsonDocument doc;
+    if (deserializeJson(doc, homeJson)) return false;
+
+    roomCount = 0;
+    JsonArray arr = doc.as<JsonArray>();
+    for (JsonVariant v : arr) {
+        if (roomCount >= MAX_ROOMS) break;
+        if (v.is<JsonObject>()) {
+            rooms[roomCount].id   = v["id"].as<int>();
+            rooms[roomCount].name = v["name"].as<String>();
+            roomCount++;
+        }
+    }
+    Serial.println("LOG: Loaded " + String(roomCount) + " rooms from homeData (cloud IDs)");
+    return roomCount > 0;
+}
+
 static void onLoadRooms() {
     ui.showMessage("LOADING", "Fetching rooms...");
 
     if (!loadRoomsFromCache()) {
-        // No merged cache — fetch segment mapping and join with homeData names
         if (fetchAndMergeRooms()) {
             cacheRooms();
+        } else {
+            // Last resort: use preloaded homeData rooms (cloud IDs, names)
+            loadRoomsFromHomeData();
         }
     }
 
@@ -417,22 +511,18 @@ static void onConfirmClean() {
     if (M5.BtnA.wasPressed()) {
         ui.showMessage("STARTING", "Sending commands...");
 
-        // Set fan power based on mode
         int fanPower = (selectedMode == 2) ? 101 : SUCTION_VALUES[selectedSuction];
-        mqtt.setFanPower(fanPower);
+        devSetFanPower(fanPower);
         delay(300);
-        mqtt.loop();
+        devLoop();
 
-        // Set water box mode based on mode
-        // 200 = off (vacuum only), 202 = medium (mop modes)
         int waterMode = (selectedMode == 1) ? 200 : 202;
-        mqtt.setWaterBoxMode(waterMode);
+        devSetWaterBoxMode(waterMode);
         delay(300);
-        mqtt.loop();
+        devLoop();
 
-        // Start segment clean
         int roomId = rooms[selectedRoom].id;
-        mqtt.startSegmentClean(&roomId, 1);
+        devStartSegmentClean(&roomId, 1);
 
         lastStatus.cleanPercent = 0;
         cleanStartMs    = millis();
@@ -443,19 +533,17 @@ static void onConfirmClean() {
 }
 
 static void onCleaning() {
-    // Process MQTT status updates
-    if (mqttAvailable && mqtt.hasNewStatus()) {
-        RobotStatus ms = mqtt.takeStatus();
+    if (deviceReady && devHasNewStatus()) {
+        RobotStatus ms = devTakeStatus();
         if (ms.battery >= 0)      lastStatus.battery      = ms.battery;
         if (ms.state >= 0)        lastStatus.state        = ms.state;
         if (ms.cleanPercent >= 0) lastStatus.cleanPercent  = ms.cleanPercent;
         lastStatus.charging = ms.charging;
-        lastCleanRedraw = 0; // force redraw
+        lastCleanRedraw = 0;
     }
 
-    // Poll get_status periodically for clean_percent updates
-    if (mqttAvailable && mqtt.isConnected() && millis() - lastStatusPoll >= 15000) {
-        mqtt.requestStatus();
+    if (deviceReady && devIsConnected() && millis() - lastStatusPoll >= 15000) {
+        devRequestStatus();
         lastStatusPoll = millis();
     }
 
@@ -477,9 +565,8 @@ static void onCleaning() {
         }
     }
 
-    // BtnB → send robot home
     if (M5.BtnB.wasPressed()) {
-        mqtt.sendRpc("app_charge");
+        devSendRpc("app_charge");
         ui.showMessage("RETURNING", "Sending home...");
         delay(1000);
         ui.showStatus(lastStatus);
@@ -492,19 +579,24 @@ static void onCleaning() {
 // ---------------------------------------------------------------------------
 
 static void handleNewConfig() {
+    RoborockConfig oldCfg = cfg;
     cfg = serial_handler.takeConfig();
     store.save(cfg);
 
     String roomsJson = serial_handler.takeRoomsJson();
     if (roomsJson.length() > 0) {
         store.saveHomeRooms(roomsJson);
-        store.clearRooms();
-        Serial.println("LOG: HomeData rooms saved (" + String(roomsJson.length()) + " bytes), merged cache cleared");
+        // Only clear merged room cache if the device changed
+        if (cfg.dev_duid != oldCfg.dev_duid) {
+            store.clearRooms();
+            Serial.println("LOG: Device changed — room cache cleared");
+        }
+        Serial.println("LOG: HomeData rooms saved (" + String(roomsJson.length()) + " bytes)");
     }
 
     Serial.println("LOG: Config saved — rebooting into connect");
-    mqtt.disconnect();
-    mqttAvailable = false;
+    if (useLocal) local.disconnect(); else mqtt.disconnect();
+    deviceReady = false;
     roomCount = 0;
     if (api) { delete api; api = nullptr; }
     enterState(State::CONNECTING);
@@ -527,7 +619,7 @@ void setup() {
 void loop() {
     M5.update();
     serial_handler.process();
-    if (mqttAvailable) mqtt.loop();
+    devLoop();
 
     if (serial_handler.hasNewConfig()) {
         handleNewConfig();
@@ -539,7 +631,7 @@ void loop() {
         case State::NO_CONFIG:      /* wait */          break;
         case State::CONNECTING:     onConnecting();     break;
         case State::SYNCING_TIME:   onSyncingTime();    break;
-        case State::MQTT_CONNECT:   onMqttConnect();    break;
+        case State::DEVICE_CONNECT: onDeviceConnect();  break;
         case State::FETCHING:       onFetching();       break;
         case State::SHOWING:        onDisplay();        break;
         case State::ERR:            onError();          break;
