@@ -304,6 +304,10 @@ bool RoborockLocal::setWaterBoxMode(int mode) {
     return sendRpc("set_water_box_custom_mode", "[" + String(mode) + "]");
 }
 
+bool RoborockLocal::setMopMode(int mode) {
+    return sendRpc("set_mop_mode", "[" + String(mode) + "]");
+}
+
 bool RoborockLocal::startSegmentClean(const int* roomIds, int roomCount, int repeat) {
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();

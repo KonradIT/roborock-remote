@@ -194,7 +194,7 @@ void DisplayUI::showSelector(const char* title, const String& item,
 // Clean confirmation screen
 
 void DisplayUI::showCleanConfirm(const String& room, const String& mode,
-                                  const String& suction) {
+                                  const String& suctionStr, const String& waterStr, const String& routeStr) {
     int w = M5.Display.width();
     int h = M5.Display.height();
     M5.Display.fillScreen(COL_BG);
@@ -224,14 +224,32 @@ void DisplayUI::showCleanConfirm(const String& room, const String& mode,
     y += 14;
     M5.Display.setTextColor(COL_TEXT);
     M5.Display.drawString("  " + mode, 10, y);
-    y += 18;
+    y += 16;
 
-    M5.Display.setTextColor(COL_DIM);
-    M5.Display.drawString("Suction:", 10, y);
-    y += 14;
-    M5.Display.setTextColor(COL_TEXT);
-    M5.Display.drawString("  " + suction, 10, y);
-    y += 24;
+    if (!suctionStr.isEmpty()) {
+        M5.Display.setTextColor(COL_DIM);
+        M5.Display.drawString("Suct:", 10, y);
+        y += 14;
+        M5.Display.setTextColor(COL_TEXT);
+        M5.Display.drawString("  " + suctionStr, 10, y);
+        y += 16;
+    }
+    if (!waterStr.isEmpty()) {
+        M5.Display.setTextColor(COL_DIM);
+        M5.Display.drawString("Water:", 10, y);
+        y += 14;
+        M5.Display.setTextColor(COL_TEXT);
+        M5.Display.drawString("  " + waterStr, 10, y);
+        y += 16;
+    }
+    if (!routeStr.isEmpty()) {
+        M5.Display.setTextColor(COL_DIM);
+        M5.Display.drawString("Route:", 10, y);
+        y += 14;
+        M5.Display.setTextColor(COL_TEXT);
+        M5.Display.drawString("  " + routeStr, 10, y);
+        y += 16;
+    }
 
     M5.Display.drawFastHLine(10, y, w - 20, COL_DIM);
     y += 12;

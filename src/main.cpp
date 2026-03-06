@@ -16,19 +16,29 @@ static constexpr unsigned long NTP_TIMEOUT         = 10000;
 static constexpr unsigned long MQTT_STATUS_TIMEOUT = 8000;
 static constexpr unsigned long CLEAN_UI_REFRESH_MS = 2000;
 
-// Cleaning configuration tables
 static const String MODE_NAMES[]    = {"Vac & Mop", "Vacuum", "Mop"};
 static constexpr int MODE_COUNT     = 3;
 
-static const String SUCTION_NAMES[] = {"Quiet", "Balanced", "Turbo", "Max"};
+static const String SUCTION_NAMES[] = {"Quiet", "Bal", "Turbo", "Max"};
 static const int    SUCTION_VALUES[]= {101, 102, 103, 104};
 static constexpr int SUCTION_COUNT  = 4;
+
+static const String WATER_NAMES[]   = {"Mild", "Std", "Intense"};
+static const int    WATER_VALUES[]  = {201, 202, 203};
+static constexpr int WATER_COUNT    = 3;
+static constexpr int WATER_OFF      = 200;
+static constexpr int SUCTION_OFF    = 105;
+
+static const String ROUTE_NAMES[]   = {"Std", "Deep"};
+static const int    ROUTE_VALUES[]  = {300, 301};
+static constexpr int ROUTE_COUNT    = 2;
 
 // Application state
 enum class State {
     BOOT, NO_CONFIG, CONNECTING, SYNCING_TIME, DEVICE_CONNECT,
     FETCHING, SHOWING, ERR,
     LOAD_ROOMS, ROOM_SELECT, MODE_SELECT, SUCTION_SELECT,
+    WATER_FLOW_SELECT, ROUTE_SELECT,
     CONFIRM_CLEAN, CLEANING
 };
 
@@ -50,16 +60,23 @@ static bool           useLocal      = false;
 // Cleaning flow
 static Room           rooms[MAX_ROOMS];
 static int            roomCount       = 0;
-static int            selectedRoom    = 0;
-static int            selectedMode    = 0;
-static int            selectedSuction = 1; // Balanced
-static unsigned long  cleanStartMs    = 0;
+static int            selectedRoom     = 0;
+static int            selectedMode     = 0;
+static int            selectedSuction  = 1;  // Balanced
+static int            selectedWater    = 1;  // Med
+static int            selectedRoute    = 0;  // Std
+static unsigned long  cleanStartMs     = 0;
 static unsigned long  lastCleanRedraw = 0;
 static unsigned long  lastStatusPoll  = 0;
 
 static void enterState(State s) {
     state = s;
     stateEnterMs = millis();
+}
+
+static bool isActiveJob(int st) {
+    return st == 5 || st == 6 || st == 7 || st == 10 ||
+           st == 11 || st == 15 || st == 17 || st == 18;
 }
 
 // WiFi / NTP helpers
@@ -116,6 +133,9 @@ static bool devSetFanPower(int p) {
 }
 static bool devSetWaterBoxMode(int m) {
     return useLocal ? local.setWaterBoxMode(m) : mqtt.setWaterBoxMode(m);
+}
+static bool devSetMopMode(int m) {
+    return useLocal ? local.setMopMode(m) : mqtt.setMopMode(m);
 }
 static bool devStartSegmentClean(const int* ids, int cnt, int rep = 1) {
     return useLocal ? local.startSegmentClean(ids, cnt, rep) : mqtt.startSegmentClean(ids, cnt, rep);
@@ -231,14 +251,33 @@ static void drawModeSelector() {
 }
 
 static void drawSuctionSelector() {
-    ui.showSelector("SUCTION POWER", SUCTION_NAMES[selectedSuction],
+    ui.showSelector("SUCT", SUCTION_NAMES[selectedSuction],
                     selectedSuction, SUCTION_COUNT);
 }
 
+static void drawWaterFlowSelector() {
+    ui.showSelector("WATER", WATER_NAMES[selectedWater],
+                    selectedWater, WATER_COUNT);
+}
+
+static void drawRouteSelector() {
+    ui.showSelector("ROUTE", ROUTE_NAMES[selectedRoute],
+                    selectedRoute, ROUTE_COUNT);
+}
+
 static void drawConfirm() {
-    String suction = (selectedMode == 2) ? "N/A" : SUCTION_NAMES[selectedSuction];
-    ui.showCleanConfirm(rooms[selectedRoom].name,
-                        MODE_NAMES[selectedMode], suction);
+    String suctionStr, waterStr, routeStr;
+    if (selectedMode == 0) {
+        suctionStr = SUCTION_NAMES[selectedSuction];
+        waterStr   = WATER_NAMES[selectedWater];
+    } else if (selectedMode == 1) {
+        suctionStr = SUCTION_NAMES[selectedSuction];
+    } else {
+        waterStr = WATER_NAMES[selectedWater];
+        routeStr = ROUTE_NAMES[selectedRoute];
+    }
+    ui.showCleanConfirm(rooms[selectedRoom].name, MODE_NAMES[selectedMode],
+                        suctionStr, waterStr, routeStr);
 }
 
 // State handlers - connectivity
@@ -350,8 +389,17 @@ static void onFetching() {
     if (lastStatus.valid) {
         Serial.println("LOG: Status - bat=" + String(lastStatus.battery) +
                        " state=" + String(lastStatus.state));
-        ui.showStatus(lastStatus);
-        enterState(State::SHOWING);
+        if (isActiveJob(lastStatus.state)) {
+            Serial.println("LOG: Active job detected, showing progress");
+            if (lastStatus.cleanPercent < 0) lastStatus.cleanPercent = 0;
+            cleanStartMs    = millis();
+            lastCleanRedraw = 0;
+            lastStatusPoll  = 0;
+            enterState(State::CLEANING);
+        } else {
+            ui.showStatus(lastStatus);
+            enterState(State::SHOWING);
+        }
     } else {
         Serial.println("LOG: Fetch error - " + lastStatus.error);
         ui.showStatus(lastStatus);
@@ -393,9 +441,7 @@ static void onError() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // State handlers - cleaning flow
-// ---------------------------------------------------------------------------
 
 static bool loadRoomsFromHomeData() {
     String homeJson = store.loadHomeRooms();
@@ -460,14 +506,18 @@ static void onModeSelect() {
         drawModeSelector();
     }
     if (M5.BtnA.wasPressed()) {
-        if (selectedMode == 2) {
-            // Mop only → skip suction
-            drawConfirm();
-            enterState(State::CONFIRM_CLEAN);
-        } else {
-            selectedSuction = 1; // default Balanced
+        if (selectedMode == 0) {
+            selectedSuction = 1;
             drawSuctionSelector();
             enterState(State::SUCTION_SELECT);
+        } else if (selectedMode == 1) {
+            selectedSuction = 1;
+            drawSuctionSelector();
+            enterState(State::SUCTION_SELECT);
+        } else {
+            selectedWater = 1;
+            drawWaterFlowSelector();
+            enterState(State::WATER_FLOW_SELECT);
         }
     }
 }
@@ -476,6 +526,39 @@ static void onSuctionSelect() {
     if (M5.BtnB.wasPressed()) {
         selectedSuction = (selectedSuction + 1) % SUCTION_COUNT;
         drawSuctionSelector();
+    }
+    if (M5.BtnA.wasPressed()) {
+        if (selectedMode == 0) {
+            selectedWater = 1;
+            drawWaterFlowSelector();
+            enterState(State::WATER_FLOW_SELECT);
+        } else {
+            drawConfirm();
+            enterState(State::CONFIRM_CLEAN);
+        }
+    }
+}
+
+static void onWaterFlowSelect() {
+    if (M5.BtnB.wasPressed()) {
+        selectedWater = (selectedWater + 1) % WATER_COUNT;
+        drawWaterFlowSelector();
+    }
+    if (M5.BtnA.wasPressed()) {
+        if (selectedMode == 2) {
+            drawRouteSelector();
+            enterState(State::ROUTE_SELECT);
+        } else {
+            drawConfirm();
+            enterState(State::CONFIRM_CLEAN);
+        }
+    }
+}
+
+static void onRouteSelect() {
+    if (M5.BtnB.wasPressed()) {
+        selectedRoute = (selectedRoute + 1) % ROUTE_COUNT;
+        drawRouteSelector();
     }
     if (M5.BtnA.wasPressed()) {
         drawConfirm();
@@ -493,15 +576,24 @@ static void onConfirmClean() {
     if (M5.BtnA.wasPressed()) {
         ui.showMessage("STARTING", "Sending commands...");
 
-        int fanPower = (selectedMode == 2) ? 101 : SUCTION_VALUES[selectedSuction];
-        devSetFanPower(fanPower);
-        delay(300);
-        devLoop();
-
-        int waterMode = (selectedMode == 1) ? 200 : 202;
-        devSetWaterBoxMode(waterMode);
-        delay(300);
-        devLoop();
+        if (selectedMode == 0) {
+            devSetFanPower(SUCTION_VALUES[selectedSuction]);
+            delay(300); devLoop();
+            devSetWaterBoxMode(WATER_VALUES[selectedWater]);
+            delay(300); devLoop();
+        } else if (selectedMode == 1) {
+            devSetFanPower(SUCTION_VALUES[selectedSuction]);
+            delay(300); devLoop();
+            devSetWaterBoxMode(WATER_OFF);
+            delay(300); devLoop();
+        } else {
+            devSetFanPower(SUCTION_OFF);
+            delay(300); devLoop();
+            devSetWaterBoxMode(WATER_VALUES[selectedWater]);
+            delay(300); devLoop();
+            devSetMopMode(ROUTE_VALUES[selectedRoute]);
+            delay(300); devLoop();
+        }
 
         int roomId = rooms[selectedRoom].id;
         devStartSegmentClean(&roomId, 1);
@@ -616,8 +708,10 @@ void loop() {
         case State::LOAD_ROOMS:     onLoadRooms();      break;
         case State::ROOM_SELECT:    onRoomSelect();     break;
         case State::MODE_SELECT:    onModeSelect();     break;
-        case State::SUCTION_SELECT: onSuctionSelect();  break;
-        case State::CONFIRM_CLEAN:  onConfirmClean();   break;
+        case State::SUCTION_SELECT:    onSuctionSelect();    break;
+        case State::WATER_FLOW_SELECT: onWaterFlowSelect(); break;
+        case State::ROUTE_SELECT:     onRouteSelect();      break;
+        case State::CONFIRM_CLEAN:    onConfirmClean();     break;
         case State::CLEANING:       onCleaning();       break;
     }
 

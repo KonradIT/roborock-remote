@@ -15,7 +15,7 @@ public:
     void showSelector(const char* title, const String& item,
                       int index, int total);
     void showCleanConfirm(const String& room, const String& mode,
-                          const String& suction);
+                          const String& suctionStr, const String& waterStr, const String& routeStr);
     void showCleaningProgress(int cleanPercent, int batteryPercent,
                               int state, unsigned long elapsedMs);
 

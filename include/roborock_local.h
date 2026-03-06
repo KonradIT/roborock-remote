@@ -48,8 +48,11 @@ public:
     // Set vacuum suction power level.
     bool setFanPower(int power);
 
-    // Set mop water flow mode.
+    // Set mop water flow mode (scrub intensity).
     bool setWaterBoxMode(int mode);
+
+    // Set mop route: 300 = standard, 301 = deep.
+    bool setMopMode(int mode);
 
     // Start segment-based cleaning for the given room IDs.
     bool startSegmentClean(const int* roomIds, int roomCount, int repeat = 1);
