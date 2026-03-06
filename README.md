@@ -1,5 +1,7 @@
 # Roborock Vacuum Remote 
 
+<img width="2069" height="1135" alt="1772790136858 (1)" src="https://github.com/user-attachments/assets/ed1ffd94-04ce-49b3-a6c5-ae8be9bc70a3" />
+
 ## Supported Hardware
 
 - M5Stack Stick S3
@@ -15,7 +17,7 @@
 
 Open project in VS Code and build with PlatformIO.
 
-Select m5stack-sticks3 in the PlatformIO environment dropdown. Make sure to select the correct port.
+Select `m5stack-sticks3` in the PlatformIO environment dropdown. Make sure to select the correct port.
 
 ## Configuration
 
@@ -23,22 +25,25 @@ After flashing, the device will display an initial setup waiting screen and wait
 
 ### 1. Run the provisioning script
 
+First follow the steps to generate a `$HOME/.roborock` credentials file using Python-roborock: https://github.com/Python-roborock/python-roborock
+
+Then:
+
 ```bash
 python scripts/configure_device.py --port <PORT>
 ```
 
 The script reads `~/.roborock`, extracts the required credentials, and prompts you for:
 
-- **WiFi SSID** and **password**
-- **Robot IP address** -- provide this for local/offline mode, or leave blank to use cloud mode
+- **WiFi password**
+- **Robot IP address** -- provide this for local/offline mode if not specified in the file.
+- **Operating mode**: cloud/local
 
 The device will reboot and connect automatically.
 
-**IMPORTANT**: Make sure to input a 2.4GHz WiFi SSID! Likely the Roborock is already connected to a 2.4 GHz network, on mine I could not get it to connect to a 5 GHz network.
-
 ### 2. Switching modes
 
-- To switch from cloud to local mode (or vice versa), re-run the provisioning script and change the IP field.
+- To switch from cloud to local mode (or vice versa), re-run the provisioning script and specify operating mode, if local it'll also use the IP address from the roborock config file.
 - Erase flash (`pio run --target erase`) to fully reset all stored configuration.
 
 ## Usage
