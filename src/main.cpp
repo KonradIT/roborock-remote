@@ -683,9 +683,12 @@ static void onRcGyro() {
     if (!rcControl.update(M5.BtnB.wasPressed())) {
         Serial.println("LOG: Exiting RC mode");
         rcControl.end();
-        devSendRpc("app_charge");
-        delay(200);
         devLoop();
+        delay(500);
+        devSendRpc("app_charge");
+        devLoop();
+        ui.showMessage("RETURNING", "Sending home...");
+        delay(1000);
         ui.showStatus(lastStatus);
         enterState(State::SHOWING);
     }
