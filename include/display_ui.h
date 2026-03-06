@@ -19,6 +19,9 @@ public:
     void showCleaningProgress(int cleanPercent, int batteryPercent,
                               int state, unsigned long elapsedMs);
 
+    // Gyro joystick screen: stickX/stickY in -1.0..1.0 range.
+    void showGyroControl(float stickX, float stickY);
+
 private:
     bool _local = false;
     void drawHeader(const char* text);
