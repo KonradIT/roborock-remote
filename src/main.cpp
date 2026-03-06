@@ -9,18 +9,14 @@
 #include "display_ui.h"
 #include "serial_handler.h"
 
-// ---------------------------------------------------------------------------
 // Tunables
-// ---------------------------------------------------------------------------
 static constexpr unsigned long REFRESH_MS          = 5UL * 60 * 1000;
 static constexpr unsigned long WIFI_TIMEOUT        = 15000;
 static constexpr unsigned long NTP_TIMEOUT         = 10000;
 static constexpr unsigned long MQTT_STATUS_TIMEOUT = 8000;
 static constexpr unsigned long CLEAN_UI_REFRESH_MS = 2000;
 
-// ---------------------------------------------------------------------------
 // Cleaning configuration tables
-// ---------------------------------------------------------------------------
 static const String MODE_NAMES[]    = {"Vac & Mop", "Vacuum", "Mop"};
 static constexpr int MODE_COUNT     = 3;
 
@@ -28,9 +24,7 @@ static const String SUCTION_NAMES[] = {"Quiet", "Balanced", "Turbo", "Max"};
 static const int    SUCTION_VALUES[]= {101, 102, 103, 104};
 static constexpr int SUCTION_COUNT  = 4;
 
-// ---------------------------------------------------------------------------
 // Application state
-// ---------------------------------------------------------------------------
 enum class State {
     BOOT, NO_CONFIG, CONNECTING, SYNCING_TIME, DEVICE_CONNECT,
     FETCHING, SHOWING, ERR,
@@ -68,9 +62,7 @@ static void enterState(State s) {
     stateEnterMs = millis();
 }
 
-// ---------------------------------------------------------------------------
 // WiFi / NTP helpers
-// ---------------------------------------------------------------------------
 
 static bool connectWiFi() {
     WiFi.disconnect(true);
@@ -90,9 +82,7 @@ static bool syncNtp() {
     return time(nullptr) >= 1000000000UL;
 }
 
-// ---------------------------------------------------------------------------
-// Transport abstraction — local TCP vs cloud MQTT
-// ---------------------------------------------------------------------------
+// Transport abstraction - local TCP vs cloud MQTT
 
 static bool devSendRpc(const String& method, const String& params = "[]") {
     return useLocal ? local.sendRpc(method, params) : mqtt.sendRpc(method, params);
@@ -131,9 +121,7 @@ static bool devStartSegmentClean(const int* ids, int cnt, int rep = 1) {
     return useLocal ? local.startSegmentClean(ids, cnt, rep) : mqtt.startSegmentClean(ids, cnt, rep);
 }
 
-// ---------------------------------------------------------------------------
 // Room loading (cache → MQTT fallback)
-// ---------------------------------------------------------------------------
 
 static bool isNumeric(const String& s) {
     if (s.length() == 0) return true;
@@ -230,9 +218,7 @@ static bool fetchAndMergeRooms() {
     return roomCount > 0;
 }
 
-// ---------------------------------------------------------------------------
 // Selector display helpers
-// ---------------------------------------------------------------------------
 
 static void drawRoomSelector() {
     ui.showSelector("SELECT ROOM", rooms[selectedRoom].name,
@@ -255,9 +241,7 @@ static void drawConfirm() {
                         MODE_NAMES[selectedMode], suction);
 }
 
-// ---------------------------------------------------------------------------
-// State handlers — connectivity
-// ---------------------------------------------------------------------------
+// State handlers - connectivity
 
 static void onBoot() {
     store.begin();
@@ -268,14 +252,14 @@ static void onBoot() {
     } else {
         enterState(State::NO_CONFIG);
         ui.showConfigMode();
-        Serial.println("LOG: No config — send CONFIG_BEGIN over serial");
+        Serial.println("LOG: No config - send CONFIG_BEGIN over serial");
     }
 }
 
 static void onConnecting() {
     Serial.println("LOG: Connecting to WiFi...");
     if (connectWiFi()) {
-        Serial.println("LOG: WiFi connected — " + WiFi.localIP().toString());
+        Serial.println("LOG: WiFi connected - " + WiFi.localIP().toString());
         enterState(State::SYNCING_TIME);
     } else {
         Serial.println("LOG: WiFi failed");
@@ -326,9 +310,7 @@ static void onDeviceConnect() {
     enterState(State::FETCHING);
 }
 
-// ---------------------------------------------------------------------------
-// State handlers — fetching & display
-// ---------------------------------------------------------------------------
+// State handlers - fetching & display
 
 static void onFetching() {
     ui.showRefreshing();
@@ -371,7 +353,7 @@ static void onFetching() {
         ui.showStatus(lastStatus);
         enterState(State::SHOWING);
     } else {
-        Serial.println("LOG: Fetch error — " + lastStatus.error);
+        Serial.println("LOG: Fetch error - " + lastStatus.error);
         ui.showStatus(lastStatus);
         enterState(State::ERR);
     }
@@ -412,7 +394,7 @@ static void onError() {
 }
 
 // ---------------------------------------------------------------------------
-// State handlers — cleaning flow
+// State handlers - cleaning flow
 // ---------------------------------------------------------------------------
 
 static bool loadRoomsFromHomeData() {
@@ -574,9 +556,7 @@ static void onCleaning() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Config handling
-// ---------------------------------------------------------------------------
 
 static void handleNewConfig() {
     RoborockConfig oldCfg = cfg;
@@ -589,12 +569,12 @@ static void handleNewConfig() {
         // Only clear merged room cache if the device changed
         if (cfg.dev_duid != oldCfg.dev_duid) {
             store.clearRooms();
-            Serial.println("LOG: Device changed — room cache cleared");
+            Serial.println("LOG: Device changed - room cache cleared");
         }
         Serial.println("LOG: HomeData rooms saved (" + String(roomsJson.length()) + " bytes)");
     }
 
-    Serial.println("LOG: Config saved — rebooting into connect");
+    Serial.println("LOG: Config saved - rebooting into connect");
     if (useLocal) local.disconnect(); else mqtt.disconnect();
     deviceReady = false;
     roomCount = 0;
@@ -603,9 +583,7 @@ static void handleNewConfig() {
     ui.showConnecting(cfg.wifi_ssid);
 }
 
-// ---------------------------------------------------------------------------
 // Arduino entry points
-// ---------------------------------------------------------------------------
 
 void setup() {
     auto m5cfg = M5.config();

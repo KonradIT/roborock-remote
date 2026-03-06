@@ -1,6 +1,8 @@
 #pragma once
 #include <Arduino.h>
 #include "config_store.h"
+#include "roborock_crypto.h"
+#include "api_utils.h"
 
 struct RobotStatus {
     String name;
@@ -13,18 +15,20 @@ struct RobotStatus {
     String error;
 };
 
+// Roborock cloud HTTP API client using HAWK authentication.
 class RoborockApi {
 public:
     explicit RoborockApi(const RoborockConfig& config);
+
+    // Replace the stored configuration (e.g. after serial re-provisioning).
     void updateConfig(const RoborockConfig& config);
+
+    // Fetch device status from the cloud /v3/user/homes endpoint.
     RobotStatus fetchHomeData();
 
 private:
     RoborockConfig _cfg;
 
+    // Build a HAWK Authorization header for the given URL path.
     String buildHawkAuth(const String& urlPath);
-    static String md5Hex(const String& input);
-    static String hmacSha256Base64(const String& key, const String& data);
-    static String base64Encode(const uint8_t* input, size_t len);
-    static String generateNonce();
 };

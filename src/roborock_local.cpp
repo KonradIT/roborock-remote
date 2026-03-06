@@ -1,22 +1,18 @@
 #include "roborock_local.h"
 
 #include <ArduinoJson.h>
-#include <mbedtls/md.h>
-#include <mbedtls/aes.h>
 #include <time.h>
 
-// ---------------------------------------------------------------------------
+using namespace RoborockCrypto;
+
 // Configuration
-// ---------------------------------------------------------------------------
 
 void RoborockLocal::configure(const RoborockConfig& cfg) {
     _cfg = cfg;
     if (!_rxBuf) _rxBuf = new uint8_t[RX_BUF_SIZE];
 }
 
-// ---------------------------------------------------------------------------
 // Connection management
-// ---------------------------------------------------------------------------
 
 bool RoborockLocal::connect() {
     Serial.println("LOG: Local TCP connecting to " + _cfg.dev_ip + ":" + String(PORT));
@@ -35,7 +31,7 @@ bool RoborockLocal::connect() {
 
     _connected = true;
     _lastPing  = millis();
-    Serial.println("LOG: Local handshake OK — fully connected");
+    Serial.println("LOG: Local handshake OK - fully connected");
     return true;
 }
 
@@ -60,12 +56,10 @@ void RoborockLocal::loop() {
         return;
     }
 
-    // Read any available data
     while (_tcp.available()) {
         readMessage();
     }
 
-    // Keep-alive ping
     if (millis() - _lastPing >= PING_MS) {
         if (!sendPing()) {
             Serial.println("LOG: Ping failed, disconnecting");
@@ -75,16 +69,13 @@ void RoborockLocal::loop() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Hello handshake
-// ---------------------------------------------------------------------------
 
 bool RoborockLocal::doHello() {
     uint8_t buf[32];
     uint32_t seq = 1;
     uint32_t rnd = random(10000, 99999);
 
-    // Build HELLO_REQUEST: [4B prefix][header(17B) + CRC32(4B)]
     size_t hdrLen = buildHeader(buf + 4, PROTO_HELLO_REQ, seq, rnd);
     writeBE32(buf + 4 + hdrLen, calcCrc32(buf + 4, hdrLen));
     uint32_t contentLen = hdrLen + 4;
@@ -95,7 +86,6 @@ bool RoborockLocal::doHello() {
     _tcp.flush();
     Serial.println("LOG: Hello sent (" + String(total) + "B)");
 
-    // Wait for HELLO_RESPONSE
     unsigned long start = millis();
     while (_tcp.available() < 4 && millis() - start < HELLO_TO) {
         if (!_tcp.connected()) {
@@ -138,7 +128,6 @@ bool RoborockLocal::doHello() {
         return false;
     }
 
-    // Dump first bytes for debugging
     char hex[64];
     int dumpLen = got < 24 ? got : 24;
     for (int i = 0; i < dumpLen; i++) sprintf(hex + i * 2, "%02x", resp[i]);
@@ -155,9 +144,7 @@ bool RoborockLocal::doHello() {
     return true;
 }
 
-// ---------------------------------------------------------------------------
 // Ping keep-alive
-// ---------------------------------------------------------------------------
 
 bool RoborockLocal::sendPing() {
     uint8_t buf[32];
@@ -175,9 +162,7 @@ bool RoborockLocal::sendPing() {
     return written == total;
 }
 
-// ---------------------------------------------------------------------------
-// Build helpers
-// ---------------------------------------------------------------------------
+// Message building
 
 size_t RoborockLocal::buildHeader(uint8_t* buf, uint16_t protocol, uint32_t seq, uint32_t rnd) {
     uint32_t ts = (uint32_t)time(nullptr);
@@ -187,7 +172,7 @@ size_t RoborockLocal::buildHeader(uint8_t* buf, uint16_t protocol, uint32_t seq,
     writeBE32(buf + off, rnd); off += 4;
     writeBE32(buf + off, ts);  off += 4;
     writeBE16(buf + off, protocol); off += 2;
-    return off; // 17 bytes
+    return off;
 }
 
 size_t RoborockLocal::buildRpc(uint8_t* buf, size_t maxLen,
@@ -221,37 +206,29 @@ size_t RoborockLocal::buildRpc(uint8_t* buf, size_t maxLen,
     aesEcbEncrypt(padded, padLen, token, enc);
     free(padded);
 
-    // Content: header(17) + payloadLen(2) + encrypted(padLen) + CRC(4) = 23 + padLen
     size_t contentLen = 17 + 2 + padLen + 4;
     if (4 + contentLen > maxLen) { free(enc); return 0; }
 
-    // 4-byte length prefix
     writeBE32(buf, (uint32_t)contentLen);
     size_t off = 4;
 
-    // Header
     buf[off++] = '1'; buf[off++] = '.'; buf[off++] = '0';
     writeBE32(buf + off, seq); off += 4;
     writeBE32(buf + off, rnd); off += 4;
     writeBE32(buf + off, ts);  off += 4;
     writeBE16(buf + off, PROTO_GENERAL_REQ); off += 2;
 
-    // Encrypted payload with length prefix
     writeBE16(buf + off, (uint16_t)padLen); off += 2;
     memcpy(buf + off, enc, padLen); off += padLen;
     free(enc);
 
-    // CRC32 over the content (after the 4-byte length prefix)
     writeBE32(buf + off, calcCrc32(buf + 4, off - 4)); off += 4;
     return off;
 }
 
-// ---------------------------------------------------------------------------
 // Generic RPC
-// ---------------------------------------------------------------------------
 
 bool RoborockLocal::sendRpc(const String& method, const String& paramsJson) {
-    // Auto-reconnect if TCP dropped
     if (_connected && !_tcp.connected()) {
         Serial.println("LOG: Local TCP dropped, reconnecting...");
         _connected = false;
@@ -279,17 +256,13 @@ bool RoborockLocal::sendRpc(const String& method, const String& paramsJson) {
 bool   RoborockLocal::hasRpcResponse() const { return _hasRpc; }
 String RoborockLocal::takeRpcResult()         { _hasRpc = false; return _rpcResult; }
 
-// ---------------------------------------------------------------------------
 // Status
-// ---------------------------------------------------------------------------
 
 bool RoborockLocal::requestStatus() { return sendRpc("get_status"); }
 bool RoborockLocal::hasNewStatus() const { return _hasStatus; }
 RobotStatus RoborockLocal::takeStatus() { _hasStatus = false; return _lastStatus; }
 
-// ---------------------------------------------------------------------------
 // High-level commands
-// ---------------------------------------------------------------------------
 
 bool RoborockLocal::fetchRooms(Room* rooms, int maxRooms, int& count, unsigned long timeoutMs) {
     count = 0;
@@ -345,9 +318,7 @@ bool RoborockLocal::startSegmentClean(const int* roomIds, int roomCount, int rep
     return sendRpc("app_segment_clean", params);
 }
 
-// ---------------------------------------------------------------------------
 // Reading incoming TCP data
-// ---------------------------------------------------------------------------
 
 bool RoborockLocal::readMessage() {
     if (_tcp.available() < 4) return false;
@@ -358,7 +329,6 @@ bool RoborockLocal::readMessage() {
 
     if (contentLen > RX_BUF_SIZE || contentLen < 17) {
         Serial.println("LOG: Local bad frame len=" + String(contentLen));
-        // Drain remaining data
         while (_tcp.available()) _tcp.read();
         return false;
     }
@@ -377,13 +347,9 @@ bool RoborockLocal::readMessage() {
 
     uint16_t proto = readBE16(_rxBuf + 15);
 
-    // PING_RESPONSE — just acknowledge
     if (proto == PROTO_PING_RSP) return true;
-
-    // HELLO_RESPONSE — shouldn't arrive here, but ignore
     if (proto == PROTO_HELLO_RSP) return true;
 
-    // GENERAL_RESPONSE (5) or RPC_RESPONSE (102) or push notification
     if (got >= 19) {
         return parseMessage(_rxBuf, got);
     }
@@ -391,9 +357,7 @@ bool RoborockLocal::readMessage() {
     return false;
 }
 
-// ---------------------------------------------------------------------------
-// Message parsing (same logic as RoborockMqtt::parseMessage)
-// ---------------------------------------------------------------------------
+// Message parsing
 
 bool RoborockLocal::parseMessage(const uint8_t* data, size_t len) {
     if (len < 19) return false;
@@ -425,7 +389,7 @@ bool RoborockLocal::parseMessage(const uint8_t* data, size_t len) {
     dec[actualLen] = '\0';
 
     if (actualLen >= 2 && dec[0] == 0x1f && dec[1] == 0x8b) {
-        Serial.println("LOG: Local gzip — not yet supported");
+        Serial.println("LOG: Local gzip - not yet supported");
         free(dec);
         return false;
     }
@@ -470,7 +434,6 @@ bool RoborockLocal::parseMessage(const uint8_t* data, size_t len) {
         }
     }
 
-    // Push notification with individual DPS values
     bool found = false;
     if (dps["121"].is<int>()) { _lastStatus.state        = dps["121"].as<int>(); found = true; }
     if (dps["122"].is<int>()) { _lastStatus.battery      = dps["122"].as<int>(); found = true; }
@@ -480,79 +443,8 @@ bool RoborockLocal::parseMessage(const uint8_t* data, size_t len) {
         if (_lastStatus.state == 8) _lastStatus.charging = true;
         _lastStatus.valid = true;
         _hasStatus = true;
-        Serial.println("LOG: Local push — bat=" + String(_lastStatus.battery) +
+        Serial.println("LOG: Local push - bat=" + String(_lastStatus.battery) +
                        " state=" + String(_lastStatus.state));
     }
     return found;
 }
-
-// ---------------------------------------------------------------------------
-// Crypto primitives (identical to RoborockMqtt)
-// ---------------------------------------------------------------------------
-
-String RoborockLocal::md5Hex(const String& input) {
-    uint8_t hash[16];
-    md5Raw((const uint8_t*)input.c_str(), input.length(), hash);
-    char hex[33];
-    for (int i = 0; i < 16; i++) sprintf(hex + i * 2, "%02x", hash[i]);
-    hex[32] = '\0';
-    return String(hex);
-}
-
-void RoborockLocal::md5Raw(const uint8_t* input, size_t len, uint8_t out[16]) {
-    mbedtls_md_context_t ctx;
-    mbedtls_md_init(&ctx);
-    mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(MBEDTLS_MD_MD5), 0);
-    mbedtls_md_starts(&ctx);
-    mbedtls_md_update(&ctx, input, len);
-    mbedtls_md_finish(&ctx, out);
-    mbedtls_md_free(&ctx);
-}
-
-void RoborockLocal::encodeTimestamp(uint32_t ts, char out[9]) {
-    char hex[9];
-    snprintf(hex, sizeof(hex), "%08x", ts);
-    static const int order[] = {5, 6, 3, 7, 1, 2, 0, 4};
-    for (int i = 0; i < 8; i++) out[i] = hex[order[i]];
-    out[8] = '\0';
-}
-
-void RoborockLocal::deriveToken(uint32_t ts, const char* localKey, uint8_t token[16]) {
-    char tsEnc[9];
-    encodeTimestamp(ts, tsEnc);
-    String combined = String(tsEnc) + String(localKey) + String(SALT);
-    md5Raw((const uint8_t*)combined.c_str(), combined.length(), token);
-}
-
-void RoborockLocal::aesEcbEncrypt(const uint8_t* in, size_t len, const uint8_t key[16], uint8_t* out) {
-    mbedtls_aes_context ctx;
-    mbedtls_aes_init(&ctx);
-    mbedtls_aes_setkey_enc(&ctx, key, 128);
-    for (size_t i = 0; i < len; i += 16)
-        mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_ENCRYPT, in + i, out + i);
-    mbedtls_aes_free(&ctx);
-}
-
-void RoborockLocal::aesEcbDecrypt(const uint8_t* in, size_t len, const uint8_t key[16], uint8_t* out) {
-    mbedtls_aes_context ctx;
-    mbedtls_aes_init(&ctx);
-    mbedtls_aes_setkey_dec(&ctx, key, 128);
-    for (size_t i = 0; i < len; i += 16)
-        mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_DECRYPT, in + i, out + i);
-    mbedtls_aes_free(&ctx);
-}
-
-uint32_t RoborockLocal::calcCrc32(const uint8_t* data, size_t len) {
-    uint32_t crc = 0xFFFFFFFF;
-    for (size_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for (int j = 0; j < 8; j++)
-            crc = (crc >> 1) ^ (0xEDB88320 & (-(int32_t)(crc & 1)));
-    }
-    return crc ^ 0xFFFFFFFF;
-}
-
-void     RoborockLocal::writeBE16(uint8_t* d, uint16_t v) { d[0] = v >> 8; d[1] = v; }
-void     RoborockLocal::writeBE32(uint8_t* d, uint32_t v) { d[0] = v >> 24; d[1] = v >> 16; d[2] = v >> 8; d[3] = v; }
-uint16_t RoborockLocal::readBE16(const uint8_t* s) { return (s[0] << 8) | s[1]; }
-uint32_t RoborockLocal::readBE32(const uint8_t* s) { return ((uint32_t)s[0] << 24) | (s[1] << 16) | (s[2] << 8) | s[3]; }

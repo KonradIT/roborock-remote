@@ -106,7 +106,7 @@ def main():
     rriot_ref = rriot.get("r", {})
 
     if not rriot.get("u"):
-        print("ERROR: userData.rriot is missing — run 'roborock login' first.")
+        print("ERROR: userData.rriot is missing - run 'roborock login' first.")
         sys.exit(1)
 
     # Determine base_url from region
