@@ -1,5 +1,6 @@
 #include "display_ui.h"
 #include <time.h>
+#include <WiFi.h>
 
 static constexpr uint16_t COL_BG      = TFT_BLACK;
 static constexpr uint16_t COL_HEADER  = 0x1A74;   // dark teal
@@ -139,6 +140,17 @@ void DisplayUI::showStatus(const RobotStatus& status) {
     char buf[16];
     snprintf(buf, sizeof(buf), "Updated %02d:%02d", t.tm_hour, t.tm_min);
     M5.Display.drawString(buf, 10, y);
+    y += 18;
+
+    M5.Display.drawFastHLine(10, y, w - 20, COL_DIM);
+    y += 8;
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.drawString("Stick: " + String(M5.Power.getBatteryLevel()) + "%", 10, y);
+    y += 14;
+    String ssid = WiFi.SSID();
+    if (ssid.isEmpty()) ssid = "--";
+    if (ssid.length() > 18) ssid = ssid.substring(0, 16) + "..";
+    M5.Display.drawString("WiFi: " + ssid, 10, y);
     y += 18;
 
     if (!status.error.isEmpty()) {
