@@ -8,6 +8,7 @@
 #include "roborock_local.h"
 #include "display_ui.h"
 #include "serial_handler.h"
+#include "rc_control.h"
 
 // Tunables
 static constexpr unsigned long REFRESH_MS          = 5UL * 60 * 1000;
@@ -32,6 +33,7 @@ static constexpr int SUCTION_OFF    = 105;
 static const String ROUTE_NAMES[]   = {"Std", "Deep"};
 static const int    ROUTE_VALUES[]  = {300, 301};
 static constexpr int ROUTE_COUNT    = 2;
+static constexpr int ROOM_ID_RC     = -1;
 
 // Application state
 enum class State {
@@ -39,7 +41,8 @@ enum class State {
     FETCHING, SHOWING, ERR,
     LOAD_ROOMS, ROOM_SELECT, MODE_SELECT, SUCTION_SELECT,
     WATER_FLOW_SELECT, ROUTE_SELECT,
-    CONFIRM_CLEAN, CLEANING
+    CONFIRM_CLEAN, CLEANING,
+    RC_GYRO
 };
 
 static ConfigStore    store;
@@ -68,6 +71,8 @@ static int            selectedRoute    = 0;  // Std
 static unsigned long  cleanStartMs     = 0;
 static unsigned long  lastCleanRedraw = 0;
 static unsigned long  lastStatusPoll  = 0;
+
+static RcControl      rcControl;
 
 static void enterState(State s) {
     state = s;
@@ -177,10 +182,19 @@ static bool loadRoomsFromCache() {
     return roomCount > 0;
 }
 
+static void prependRcRoom() {
+    if (roomCount >= MAX_ROOMS) return;
+    for (int i = roomCount; i > 0; i--) rooms[i] = rooms[i - 1];
+    rooms[0].id   = ROOM_ID_RC;
+    rooms[0].name = "RC";
+    roomCount++;
+}
+
 static void cacheRooms() {
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
     for (int i = 0; i < roomCount; i++) {
+        if (rooms[i].id == ROOM_ID_RC) continue;
         JsonObject obj = arr.add<JsonObject>();
         obj["id"]   = rooms[i].id;
         obj["name"] = rooms[i].name;
@@ -477,6 +491,7 @@ static void onLoadRooms() {
     }
 
     fixRoomNames();
+    prependRcRoom();
 
     if (roomCount > 0) {
         selectedRoom = 0;
@@ -494,9 +509,25 @@ static void onRoomSelect() {
         drawRoomSelector();
     }
     if (M5.BtnA.wasPressed()) {
-        selectedMode = 0;
-        drawModeSelector();
-        enterState(State::MODE_SELECT);
+        if (rooms[selectedRoom].id == ROOM_ID_RC) {
+            if (!deviceReady || !devIsConnected()) return;
+            RcControlCallbacks cb;
+            cb.sendRpc = devSendRpc;
+            cb.loop = devLoop;
+            cb.isConnected = devIsConnected;
+            cb.ui = &ui;
+            rcControl.setCallbacks(cb);
+            if (rcControl.start()) {
+                Serial.println("LOG: Entering RC mode");
+                delay(200);
+                devLoop();
+                enterState(State::RC_GYRO);
+            }
+        } else {
+            selectedMode = 0;
+            drawModeSelector();
+            enterState(State::MODE_SELECT);
+        }
     }
 }
 
@@ -648,6 +679,21 @@ static void onCleaning() {
     }
 }
 
+static void onRcGyro() {
+    if (!rcControl.update(M5.BtnB.wasPressed())) {
+        Serial.println("LOG: Exiting RC mode");
+        rcControl.end();
+        devLoop();
+        delay(500);
+        devSendRpc("app_charge");
+        devLoop();
+        ui.showMessage("RETURNING", "Sending home...");
+        delay(1000);
+        ui.showStatus(lastStatus);
+        enterState(State::SHOWING);
+    }
+}
+
 // Config handling
 
 static void handleNewConfig() {
@@ -713,6 +759,7 @@ void loop() {
         case State::ROUTE_SELECT:     onRouteSelect();      break;
         case State::CONFIRM_CLEAN:    onConfirmClean();     break;
         case State::CLEANING:       onCleaning();       break;
+        case State::RC_GYRO:        onRcGyro();         break;
     }
 
     delay(20);

@@ -350,3 +350,48 @@ void DisplayUI::showRefreshing() {
     M5.Display.drawString("Refreshing...", w / 2, h - 28);
     M5.Display.setTextDatum(TL_DATUM);
 }
+
+// Gyro joystick control screen
+
+void DisplayUI::showGyroControl(float stickX, float stickY) {
+    int w = M5.Display.width();
+    int h = M5.Display.height();
+    M5.Display.fillScreen(COL_BG);
+    drawHeader("RC CONTROL");
+
+    int cx = w / 2;
+    int cy = h / 2 - 5;
+    int rOuter = 50;
+
+    M5.Display.drawCircle(cx, cy, rOuter, COL_DIM);
+    M5.Display.drawCircle(cx, cy, rOuter / 2, COL_BAR_BG);
+    M5.Display.drawFastHLine(cx - rOuter, cy, rOuter * 2, COL_BAR_BG);
+    M5.Display.drawFastVLine(cx, cy - rOuter, rOuter * 2, COL_BAR_BG);
+
+    float clampX = stickX;
+    float clampY = stickY;
+    if (clampX < -1.0f) clampX = -1.0f;
+    if (clampX >  1.0f) clampX =  1.0f;
+    if (clampY < -1.0f) clampY = -1.0f;
+    if (clampY >  1.0f) clampY =  1.0f;
+
+    int dotX = cx + (int)(clampX * rOuter);
+    int dotY = cy - (int)(clampY * rOuter);
+    M5.Display.fillCircle(dotX, dotY, 6, COL_ACCENT);
+
+    float mag = sqrtf(clampX * clampX + clampY * clampY);
+    uint16_t dotCol = (mag > 0.7f) ? COL_RED : (mag > 0.3f) ? COL_YELLOW : COL_GREEN;
+    M5.Display.fillCircle(dotX, dotY, 4, dotCol);
+
+    int yInfo = cy + rOuter + 14;
+    M5.Display.setTextColor(COL_DIM);
+    M5.Display.setTextSize(1);
+    M5.Display.setTextDatum(MC_DATUM);
+
+    char buf[24];
+    snprintf(buf, sizeof(buf), "V:%.2f  R:%.0f", clampY * 0.3f, clampX * -180.0f);
+    M5.Display.drawString(buf, cx, yInfo);
+
+    M5.Display.drawString("[B] Exit", cx, h - 10);
+    M5.Display.setTextDatum(TL_DATUM);
+}
