@@ -94,8 +94,7 @@ def main():
     # --- Read config file ---
     if not args.config.exists():
         print(f"Config file not found: {args.config}")
-        print("Run 'roborock login --email <email>' first to create it,")
-        print("then 'roborock discover' to populate device data.")
+        print("Run './scripts/setup.sh <email>' first to create it,")
         sys.exit(1)
 
     data = read_roborock_file(args.config)
@@ -106,7 +105,7 @@ def main():
     rriot_ref = rriot.get("r", {})
 
     if not rriot.get("u"):
-        print("ERROR: userData.rriot is missing - run 'roborock login' first.")
+        print("ERROR: userData.rriot is missing - run './scripts/setup.sh <email>' first.")
         sys.exit(1)
 
     # Determine base_url from region
