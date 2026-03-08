@@ -34,6 +34,7 @@ static const String ROUTE_NAMES[]   = {"Std", "Deep"};
 static const int    ROUTE_VALUES[]  = {300, 301};
 static constexpr int ROUTE_COUNT    = 2;
 static constexpr int ROOM_ID_RC     = -1;
+static constexpr int ROOM_ID_RTH    = -2;
 
 // Application state
 enum class State {
@@ -182,11 +183,16 @@ static bool loadRoomsFromCache() {
     return roomCount > 0;
 }
 
-static void prependRcRoom() {
+static void prependSpecialRooms() {
     if (roomCount >= MAX_ROOMS) return;
     for (int i = roomCount; i > 0; i--) rooms[i] = rooms[i - 1];
     rooms[0].id   = ROOM_ID_RC;
     rooms[0].name = "RC";
+    roomCount++;
+    if (roomCount >= MAX_ROOMS) return;
+    for (int i = roomCount; i > 1; i--) rooms[i] = rooms[i - 1];
+    rooms[1].id   = ROOM_ID_RTH;
+    rooms[1].name = "RTH";
     roomCount++;
 }
 
@@ -194,7 +200,7 @@ static void cacheRooms() {
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
     for (int i = 0; i < roomCount; i++) {
-        if (rooms[i].id == ROOM_ID_RC) continue;
+        if (rooms[i].id == ROOM_ID_RC || rooms[i].id == ROOM_ID_RTH) continue;
         JsonObject obj = arr.add<JsonObject>();
         obj["id"]   = rooms[i].id;
         obj["name"] = rooms[i].name;
@@ -491,7 +497,7 @@ static void onLoadRooms() {
     }
 
     fixRoomNames();
-    prependRcRoom();
+    prependSpecialRooms();
 
     if (roomCount > 0) {
         selectedRoom = 0;
@@ -523,6 +529,14 @@ static void onRoomSelect() {
                 devLoop();
                 enterState(State::RC_GYRO);
             }
+        } else if (rooms[selectedRoom].id == ROOM_ID_RTH) {
+            if (!deviceReady || !devIsConnected()) return;
+            devSendRpc("app_charge", "[]");
+            devLoop();
+            ui.showMessage("RETURNING", "Sending home...");
+            delay(1000);
+            ui.showStatus(lastStatus);
+            enterState(State::SHOWING);
         } else {
             selectedMode = 0;
             drawModeSelector();
@@ -683,9 +697,15 @@ static void onRcGyro() {
     if (!rcControl.update(M5.BtnB.wasPressed())) {
         Serial.println("LOG: Exiting RC mode");
         rcControl.end();
-        devLoop();
-        delay(500);
-        devSendRpc("app_charge");
+        for (int i = 0; i < 30; i++) {
+            devLoop();
+            delay(50);
+            if (devHasRpc()) break;
+        }
+        delay(400);
+        devSendRpc("app_charge", "[]");
+        for (int i = 0; i < 6; i++) { devLoop(); delay(50); }
+        devSendRpc("app_charge", "[]");
         devLoop();
         ui.showMessage("RETURNING", "Sending home...");
         delay(1000);

@@ -31,7 +31,9 @@ bool RcControl::start() {
 }
 
 void RcControl::end() {
-    if (_cb.sendRpc) _cb.sendRpc("app_rc_end", "[]");
+    if (!_cb.sendRpc) return;
+    _cb.sendRpc("app_rc_stop", "[]");
+    _cb.sendRpc("app_rc_end", "[]");
 }
 
 bool RcControl::update(bool btnBPressed) {
