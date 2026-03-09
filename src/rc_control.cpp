@@ -4,20 +4,25 @@
 static constexpr unsigned long RC_SEND_MS = 300;
 static constexpr float GYRO_DEAD_ZONE = 0.08f;
 static constexpr float FILTER_ALPHA = 0.2f;
+static constexpr float RC_EXPO_MID = (float)(RC_EXPO_MID_PCT) / 100.0f;
 
-// 0-50% input: smooth/linear; 50-100%: exponentially tighter
+// Below mid: linear; above mid: exponentially tighter (when RC_EXPO_ENABLED)
 static float applyExpo(float y) {
     float ay = fabsf(y);
     float sign = (y >= 0) ? 1.0f : -1.0f;
+#if RC_EXPO_ENABLED
     float out;
-    if (ay <= 0.5f) {
-        out = ay;  // linear in lower half
+    if (ay <= RC_EXPO_MID) {
+        out = ay;
     } else {
-        float t = (ay - 0.5f) / 0.5f;
+        float t = (ay - RC_EXPO_MID) / (1.0f - RC_EXPO_MID);
         float e = expf(2.0f * t);
-        out = 0.5f + 0.5f * (e - 1.0f) / (expf(2.0f) - 1.0f);
+        out = RC_EXPO_MID + (1.0f - RC_EXPO_MID) * (e - 1.0f) / (expf(2.0f) - 1.0f);
     }
     return sign * out;
+#else
+    return sign * ay;
+#endif
 }
 
 bool RcControl::start() {

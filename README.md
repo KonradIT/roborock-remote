@@ -80,6 +80,18 @@ The provisioning script reads `~/.roborock` which was just created by the `robor
 
 The device will reboot and connect automatically.
 
+### Defines in platformio.ini
+
+- `REFRESH_MS` -- refresh rate for the main screen (default: 300000ms)
+- `WIFI_TIMEOUT` -- timeout for WiFi connection (default: 15000ms)
+- `NTP_TIMEOUT` -- timeout for NTP sync (default: 10000ms)
+- `MQTT_STATUS_TIMEOUT` -- timeout for MQTT status (default: 8000ms)
+- `SERIAL_BAUD` -- baud rate for the serial connection (default: 115200)
+- `COL_HEADER` -- color for the header (default: 0x1A74)
+- `COL_ACCENT` -- color for the accent (default: 0x07FF)
+- `RC_EXPO_MID_PCT` -- middle point for the RC exponential control (default: 50)
+- `RC_EXPO_ENABLED` -- enable/disable the RC exponential control (default: 1)
+
 ### Protocol Notes
 
 The Roborock V1 local protocol communicates over TCP port 58867 with a custom binary framing:

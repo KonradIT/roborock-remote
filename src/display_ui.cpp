@@ -2,11 +2,11 @@
 #include <time.h>
 #include <WiFi.h>
 
-static constexpr uint16_t COL_BG      = TFT_BLACK;
-static constexpr uint16_t COL_HEADER  = 0x1A74;   // dark teal
-static constexpr uint16_t COL_TEXT    = TFT_WHITE;
-static constexpr uint16_t COL_DIM     = TFT_DARKGREY;
-static constexpr uint16_t COL_ACCENT  = 0x07FF;   // cyan
+static constexpr uint16_t COL_BG       = TFT_BLACK;
+static constexpr uint16_t HEADER_COLOR = (uint16_t)(COL_HEADER);
+static constexpr uint16_t COL_TEXT     = TFT_WHITE;
+static constexpr uint16_t COL_DIM      = TFT_DARKGREY;
+static constexpr uint16_t ACCENT_COLOR = (uint16_t)(COL_ACCENT);
 static constexpr uint16_t COL_GREEN   = 0x07E0;
 static constexpr uint16_t COL_YELLOW  = 0xFFE0;
 static constexpr uint16_t COL_RED     = 0xF800;
@@ -44,8 +44,8 @@ void DisplayUI::begin() {
 
 void DisplayUI::drawHeader(const char* text) {
     int w = M5.Display.width();
-    M5.Display.fillRect(0, 0, w, 22, COL_HEADER);
-    M5.Display.setTextColor(COL_TEXT, COL_HEADER);
+    M5.Display.fillRect(0, 0, w, 22, HEADER_COLOR);
+    M5.Display.setTextColor(COL_TEXT, HEADER_COLOR);
     M5.Display.setTextSize(1);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.drawString(text, w / 2, 11);
@@ -91,7 +91,7 @@ void DisplayUI::showStatus(const RobotStatus& status) {
     int y = 30;
     M5.Display.setTextSize(1);
 
-    M5.Display.setTextColor(COL_ACCENT);
+    M5.Display.setTextColor(ACCENT_COLOR);
     String name = status.name.isEmpty() ? "Unknown" : status.name;
     if (name.length() > 22) name = name.substring(0, 20) + "..";
     M5.Display.setTextDatum(MC_DATUM);
@@ -182,7 +182,7 @@ void DisplayUI::showSelector(const char* title, const String& item,
     String counter = String(index + 1) + " / " + String(total);
     M5.Display.drawString(counter, w / 2, 40);
 
-    M5.Display.setTextColor(COL_ACCENT);
+    M5.Display.setTextColor(ACCENT_COLOR);
     M5.Display.setTextSize(2);
     String display = item;
     int maxChars = (w - 10) / 12;
@@ -218,7 +218,7 @@ void DisplayUI::showCleanConfirm(const String& room, const String& mode,
     M5.Display.setTextColor(COL_DIM);
     M5.Display.drawString("Room:", 10, y);
     y += 14;
-    M5.Display.setTextColor(COL_ACCENT);
+    M5.Display.setTextColor(ACCENT_COLOR);
     M5.Display.setTextSize(2);
     M5.Display.setTextDatum(MC_DATUM);
     String rName = room;
@@ -297,16 +297,16 @@ void DisplayUI::showCleaningProgress(int cleanPercent, int batteryPercent,
     int rInner = 36;
 
     int gaugeVal = (cleanPercent >= 0) ? cleanPercent : 0;
-    uint16_t gaugeColor = COL_ACCENT;
+    uint16_t gaugeColor = ACCENT_COLOR;
     if (gaugeVal > 75)      gaugeColor = COL_GREEN;
-    else if (gaugeVal > 40) gaugeColor = COL_ACCENT;
+    else if (gaugeVal > 40) gaugeColor = ACCENT_COLOR;
     else                    gaugeColor = COL_ORANGE;
 
     drawCircularGauge(cx, cy, rOuter, rInner, gaugeVal, gaugeColor);
 
     int y = cy + rOuter + 12;
 
-    M5.Display.setTextColor(COL_ACCENT);
+    M5.Display.setTextColor(ACCENT_COLOR);
     M5.Display.setTextSize(1);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.drawString(stateText(state), cx, y);
@@ -356,7 +356,7 @@ void DisplayUI::showConnecting(const String& ssid) {
 void DisplayUI::showRefreshing() {
     int w = M5.Display.width();
     int h = M5.Display.height();
-    M5.Display.setTextColor(COL_ACCENT, COL_BG);
+    M5.Display.setTextColor(ACCENT_COLOR, COL_BG);
     M5.Display.setTextSize(1);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.drawString("Refreshing...", w / 2, h - 28);
@@ -389,7 +389,7 @@ void DisplayUI::showGyroControl(float stickX, float stickY) {
 
     int dotX = cx + (int)(clampX * rOuter);
     int dotY = cy - (int)(clampY * rOuter);
-    M5.Display.fillCircle(dotX, dotY, 6, COL_ACCENT);
+    M5.Display.fillCircle(dotX, dotY, 6, ACCENT_COLOR);
 
     float mag = sqrtf(clampX * clampX + clampY * clampY);
     uint16_t dotCol = (mag > 0.7f) ? COL_RED : (mag > 0.3f) ? COL_YELLOW : COL_GREEN;

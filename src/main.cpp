@@ -10,11 +10,6 @@
 #include "serial_handler.h"
 #include "rc_control.h"
 
-// Tunables
-static constexpr unsigned long REFRESH_MS          = 5UL * 60 * 1000;
-static constexpr unsigned long WIFI_TIMEOUT        = 15000;
-static constexpr unsigned long NTP_TIMEOUT         = 10000;
-static constexpr unsigned long MQTT_STATUS_TIMEOUT = 8000;
 static constexpr unsigned long CLEAN_UI_REFRESH_MS = 2000;
 
 static const String MODE_NAMES[]    = {"Vac & Mop", "Vacuum", "Mop"};
@@ -746,7 +741,7 @@ static void handleNewConfig() {
 void setup() {
     auto m5cfg = M5.config();
     M5.begin(m5cfg);
-    serial_handler.begin(115200);
+    serial_handler.begin(SERIAL_BAUD);
     ui.begin();
     Serial.println("LOG: Roborock Remote booting...");
     enterState(State::BOOT);
